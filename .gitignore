@@ -1,5 +1,6 @@
 *.gz
-A1/cifar-10-batches-py
+*/cifar-10-batches-py
+*.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
