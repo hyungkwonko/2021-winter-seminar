@@ -467,6 +467,9 @@ def softmax_loss_naive(W, X, y, reg):
     correct_class_score = scores[y[i]]
     loss += -torch.log(correct_class_score)
 
+    # see this if you cannot follow
+    # https://stackoverflow.com/a/53972798
+
     for j in range(num_classes):
       if j == y[i]:
         dW[:,j] += (scores[j] - 1) * X[i,:]

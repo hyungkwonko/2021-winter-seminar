@@ -116,7 +116,11 @@ def nn_forward_pass(params, X):
     # shape (N, C).                                                            #
     ############################################################################
     # Replace "pass" statement with your code
-    pass
+    hidden = torch.matmul(X, W1) + b1
+    hidden[hidden < 0] = 0  # this is relu
+    scores = torch.matmul(hidden, W2) + b2
+    # scores = torch.nn.functional.softmax(scores, dim=1)
+    
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -176,7 +180,12 @@ def nn_forward_backward(params, X, y=None, reg=0.0):
     # (Check Numeric Stability in http://cs231n.github.io/linear-classify/).   #
     ############################################################################
     # Replace "pass" statement with your code
-    pass
+
+    scores = torch.nn.functional.softmax(scores, dim=1)
+    correct_class_score = scores[torch.arange(N), y]
+    loss = torch.sum(-torch.log(correct_class_score)) / N
+    loss += reg * (torch.sum(W1 * W1) + torch.sum(W2 * W2))  # regularization
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -190,7 +199,37 @@ def nn_forward_backward(params, X, y=None, reg=0.0):
     # tensor of same size                                                     #
     ###########################################################################
     # Replace "pass" statement with your code
-    pass
+    
+    # W1: First layer weights; has shape (D, H)
+    # b1: First layer biases; has shape (H,)
+    # W2: Second layer weights; has shape (H, C)
+    # b2: Second layer biases; has shape (C,)
+    # h1: hidden (N, H)
+
+    # for calculating the gradient of cross-entropy function
+    # reference: https://www.adeveloperdiary.com/data-science/deep-learning/neural-network-with-softmax-in-python/
+
+    y_diff = torch.zeros(scores.shape, device=X.device)
+    y_diff[torch.arange(y_diff.shape[0]), y] = 1
+
+    # (dL/dz) = y_hat - y
+    y_diff_arr = scores - y_diff                                             
+
+    # (dL/dz) * (dz/dW2)
+    grads['W2'] = torch.matmul(h1.t(), y_diff_arr) / N + 2 * reg * W2        # (H, C) = h1.t() * y_diff_arr = (H, N) * (N, C)
+    # (dL/dz) * (dz/db2)
+    grads['b2'] = torch.sum(y_diff_arr, dim=0) / N                           # (C,  ) = y_diff_arr.sum(0)   = (N, C)
+
+    # (dL/dz) * (dz/dh)
+    dh = torch.matmul(y_diff_arr, W2.t())                                    # (N, H) = y_diff_arr * W2.t() = (N, C) * (C, H)
+    dh[h1 <= 0] = 0
+
+    # (dL/dz) * (dz/dh) * (dh/dW1)
+    grads['W1'] = torch.matmul(X.t(), dh) / N + 2 * reg * W1                 # (D, H) = X.t() * dh = (D, N) * (N, H)
+    # (dL/dz) * (dz/dh) * (dh/db1)
+    grads['b1'] = torch.sum(dh, dim=0) / N                                   # (H,  ) = dh.sum(0)  = (N, H)
+
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -260,7 +299,10 @@ def nn_train(params, loss_func, pred_func, X, y, X_val, y_val,
     # stored in the grads dictionary defined above.                         #
     #########################################################################
     # Replace "pass" statement with your code
-    pass
+    params['W2'] -= learning_rate * grads['W2']
+    params['W1'] -= learning_rate * grads['W1']
+    params['b2'] -= learning_rate * grads['b2']
+    params['b1'] -= learning_rate * grads['b1']
     #########################################################################
     #                             END OF YOUR CODE                          #
     #########################################################################
@@ -316,7 +358,15 @@ def nn_predict(params, loss_func, X):
   # TODO: Implement this function; it should be VERY simple!                #
   ###########################################################################
   # Replace "pass" statement with your code
-  pass
+
+  W1, b1 = params['W1'], params['b1']
+  W2, b2 = params['W2'], params['b2']
+  
+  hidden = torch.matmul(X, W1) + b1
+  hidden[hidden < 0] = 0  # this is relu
+  y_pred = torch.matmul(hidden, W2) + b2
+  y_pred = torch.argmax(y_pred, dim=1)
+
   ###########################################################################
   #                              END OF YOUR CODE                           #
   ###########################################################################
@@ -351,7 +401,10 @@ def nn_get_search_params():
   # classifier.                                                             #
   ###########################################################################
   # Replace "pass" statement with your code
-  pass
+  hidden_sizes = [32, 128] 
+  regularization_strengths = [1e-5, 1e-3]
+  learning_rates = [1e0]
+  learning_rate_decays = [0.95, 0.7]
   ###########################################################################
   #                           END OF YOUR CODE                              #
   ###########################################################################
@@ -405,7 +458,44 @@ def find_best_net(data_dict, get_param_set_fn):
   # automatically like we did on the previous exercises.                      #
   #############################################################################
   # Replace "pass" statement with your code
-  pass
+  
+  learning_rates, hidden_sizes, regularization_strengths, learning_rate_decays = get_param_set_fn()
+  num_models = len(learning_rates) * len(hidden_sizes) * len(learning_rate_decays) * len(regularization_strengths)
+
+  if num_models > 25:
+    raise Exception("Please do not test/submit more than 25 items at once")
+  elif num_models < 5:
+    raise Exception("Please present at least 5 parameter sets in your final ipynb")
+
+  i = 0
+
+  stat_dict = {}
+  for lr in learning_rates:
+    for reg in regularization_strengths:
+      for hs in hidden_sizes:
+        for dcy in learning_rate_decays:
+          i += 1
+
+          net = TwoLayerNet(3 * 32 * 32, hs, 10, device=data_dict['X_train'].device, dtype=data_dict['X_train'].dtype)
+          stats = net.train(data_dict['X_train'], data_dict['y_train'], data_dict['X_val'], data_dict['y_val'],
+                    num_iters=3000, batch_size=1000,
+                    learning_rate=lr, learning_rate_decay=dcy,
+                    reg=reg, verbose=False)
+          stat_dict[(lr, reg, hs, dcy)] = stats
+
+          y_val_pred = net.predict(data_dict['X_val'])
+          val_acc = 100.0 * (y_val_pred == data_dict['y_val']).double().mean().item()
+
+          print('Training Softmax %d / %d with lr=%e, reg=%e, hs=%d, dcy=%e, ACCURACY: %f' % (i, num_models, lr, reg, hs, dcy, val_acc))
+
+          if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_stat = stat_dict
+            best_net = net # save the classifier
+
+  print('best validation accuracy: %f' % best_val_acc)
+
+
   #############################################################################
   #                               END OF YOUR CODE                            #
   #############################################################################
