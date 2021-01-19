@@ -11,7 +11,7 @@
 |1-2| [k-Nearest Neighbor classifier](https://web.eecs.umich.edu/~justincj/teaching/eecs498/FA2020/assignment1.html) / [code](https://github.com/hyungkwonko/2021-winter-seminar/blob/main/A1/knn.ipynb)
 |2-1| [Linear Classifiers](https://web.eecs.umich.edu/~justincj/teaching/eecs498/FA2020/assignment2.html) / [code](https://github.com/hyungkwonko/2021-winter-seminar/blob/main/A2/linear_classifier.ipynb)
 |2-2| [Two-layer Neural Network](https://web.eecs.umich.edu/~justincj/teaching/eecs498/FA2020/assignment2.html) / [code](https://github.com/hyungkwonko/2021-winter-seminar/blob/main/A2/two_layer_net.ipynb)
-|3-1| Fully-Connected Neural Network
+|3-1| [Fully-Connected Neural Network](https://web.eecs.umich.edu/~justincj/teaching/eecs498/FA2020/assignment3.html) / [code](https://github.com/hyungkwonko/2021-winter-seminar/blob/main/A3/fully_connected_networks.ipynb)
 |3-2| Convolutional Neural Network
 |4-1| PyTorch Autograd
 |4-2| Image Captioning with Recurrent Neural Networks

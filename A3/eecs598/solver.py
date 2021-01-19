@@ -110,10 +110,10 @@ class Solver(object):
         self.num_train_samples = kwargs.pop("num_train_samples", 1000)
         self.num_val_samples = kwargs.pop("num_val_samples", None)
 
-        self.device = kwargs.pop("device", "cpu")
+        self.device = kwargs.pop("device", "cuda")  # Hyung-Kwon Ko
 
         self.checkpoint_name = kwargs.pop("checkpoint_name", None)
-        self.print_every = kwargs.pop("print_every", 10)
+        self.print_every = kwargs.pop("print_every", 500)
         self.print_acc_every = kwargs.pop("print_acc_every", 1)
         self.verbose = kwargs.pop("verbose", True)
 
@@ -198,7 +198,7 @@ class Solver(object):
         """
         if config is None:
             config = {}
-        config.setdefault("learning_rate", 1e-2)
+        config.setdefault("learning_rate", 2e-2)
 
         w -= config["learning_rate"] * dw
         return w, config
@@ -239,7 +239,7 @@ class Solver(object):
             scores = self.model.loss(X[start:end])
             y_pred.append(torch.argmax(scores, dim=1))
 
-        y_pred = torch.cat(y_pred)
+        y_pred = torch.cat(y_pred).to(self.device)  # Hyung-Kwon Ko added
         acc = (y_pred == y).to(torch.float).mean()
 
         return acc.item()
