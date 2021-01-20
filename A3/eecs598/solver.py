@@ -151,7 +151,7 @@ class Solver(object):
         # Make a minibatch of training data
         num_train = self.X_train.shape[0]
         batch_mask = torch.randperm(num_train)[: self.batch_size]
-        X_batch = self.X_train[batch_mask].to(self.device)
+        X_batch = self.X_train[batch_mask].to(self.device).type(torch.float64)
         y_batch = self.y_train[batch_mask].to(self.device)
 
         # Compute loss and gradient

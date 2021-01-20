@@ -69,11 +69,11 @@ class Linear(object):
     # TODO: Implement the linear backward pass.                                 #
     #############################################################################
     # Replace "pass" statement with your code
-    dout = dout.float()
 
-    x1 = x.reshape(x.shape[0], -1)
+    # dout = dout.float()
+
     dx = torch.matmul(dout, w.t()).reshape(x.shape)
-    dw = torch.matmul(x1.t(), dout)
+    dw = torch.matmul(x.reshape(x.shape[0], -1).t(), dout)
     db = torch.sum(dout, dim=0) 
     #############################################################################
     #                              END OF YOUR CODE                             #
@@ -177,7 +177,7 @@ class TwoLayerNet(object):
   """
 
   def __init__(self, input_dim=3*32*32, hidden_dim=100, num_classes=10,
-         weight_scale=1e-3, reg=0.0, dtype=torch.float32, device='cpu'):
+         weight_scale=1e-3, reg=0.0, dtype=torch.float64, device='cpu'):
     """
     Initialize a new network.
     Inputs:
@@ -194,6 +194,7 @@ class TwoLayerNet(object):
     """
     self.params = {}
     self.reg = reg
+    self.dtype = dtype
 
     ###########################################################################
     # TODO: Initialize the weights and biases of the two-layer net. Weights   #
@@ -259,6 +260,8 @@ class TwoLayerNet(object):
     ###########################################################################
     # Replace "pass" statement with your code
 
+    X = X.type(self.dtype)
+
     hidden, cache_l1 = Linear_ReLU.forward(X, self.params['W1'], self.params['b1'])  # cache_l1 = (x, w, b)
     scores, cache_l2 = Linear.forward(hidden, self.params['W2'], self.params['b2'])
 
@@ -316,7 +319,7 @@ class FullyConnectedNet(object):
 
   def __init__(self, hidden_dims, input_dim=3*32*32, num_classes=10,
                dropout=0.0, reg=0.0, weight_scale=1e-2, seed=None,
-               dtype=torch.float, device='cuda'):
+               dtype=torch.float64, device='cuda'):
     """
     Initialize a new FullyConnectedNet.
 
@@ -429,12 +432,21 @@ class FullyConnectedNet(object):
 
     hiddens = {}
     caches = {}
+    dropouts = {}
 
     N = self.num_layers - 1
-    hiddens['h0'] = X
-    for i in range(N):
-      hiddens[f'h{i+1}'], caches[f'l{i}'] = Linear_ReLU.forward(hiddens[f'h{i}'], self.params[f'W{i}'], self.params[f'b{i}'])
-    scores, caches[f'l{N}'] = Linear.forward(hiddens[f'h{N}'], self.params[f'W{N}'], self.params[f'b{N}'])
+
+    if self.use_dropout:
+      dropouts['d0'] = X
+      for i in range(N):
+        hiddens[f'h{i+1}'], caches[f'l{i}'] = Linear_ReLU.forward(dropouts[f'd{i}'], self.params[f'W{i}'], self.params[f'b{i}'])
+        dropouts[f'd{i+1}'], caches[f'd{i+1}'] = Dropout.forward(hiddens[f'h{i+1}'], self.dropout_param)
+      scores, caches[f'l{N}'] = Linear.forward(dropouts[f'd{N}'], self.params[f'W{N}'], self.params[f'b{N}'])
+    else:
+      hiddens['h0'] = X
+      for i in range(N):
+        hiddens[f'h{i+1}'], caches[f'l{i}'] = Linear_ReLU.forward(hiddens[f'h{i}'], self.params[f'W{i}'], self.params[f'b{i}'])
+      scores, caches[f'l{N}'] = Linear.forward(hiddens[f'h{N}'], self.params[f'W{N}'], self.params[f'b{N}'])
 
     ############################################################################
     #                             END OF YOUR CODE                             #
@@ -467,11 +479,19 @@ class FullyConnectedNet(object):
 
     # calculate gradients
     ds = {}
-    for i in reversed(range(self.num_layers)):
-      if i == self.num_layers-1:
-        ds[f'dh{i}'], ds[f'dW{i}'], ds[f'db{i}'] = Linear.backward(da, caches[f'l{i}'])
-      else:
-        ds[f'dh{i}'], ds[f'dW{i}'], ds[f'db{i}'] = Linear_ReLU.backward(ds[f'dh{i+1}'], caches[f'l{i}'])
+    if self.use_dropout:
+      for i in reversed(range(self.num_layers)):
+        if i == self.num_layers-1:
+          ds[f'dh{i}'], ds[f'dW{i}'], ds[f'db{i}'] = Linear.backward(da, caches[f'l{i}'])
+        else:
+          ds[f'dd{i+1}'] = Dropout.backward(ds[f'dh{i+1}'], caches[f'd{i+1}'])
+          ds[f'dh{i}'], ds[f'dW{i}'], ds[f'db{i}'] = Linear_ReLU.backward(ds[f'dd{i+1}'], caches[f'l{i}'])
+    else:
+      for i in reversed(range(self.num_layers)):
+        if i == self.num_layers-1:
+          ds[f'dh{i}'], ds[f'dW{i}'], ds[f'db{i}'] = Linear.backward(da, caches[f'l{i}'])
+        else:
+          ds[f'dh{i}'], ds[f'dW{i}'], ds[f'db{i}'] = Linear_ReLU.backward(ds[f'dh{i+1}'], caches[f'l{i}'])
 
     for i in range(self.num_layers):
       grads[f'W{i}'] = ds[f'dW{i}'] + 2 * self.reg * self.params[f'W{i}']
@@ -693,15 +713,12 @@ class Dropout(object):
       ###########################################################################
       # Replace "pass" statement with your code
 
-      vals, _ = torch.sort(x.reshape(-1))
-      cutoff = vals[int(len(vals) * p)].item()
-
+      p_mat = torch.rand(x.shape, device=x.device)
       mask = torch.ones(x.shape, device=x.device)
-      mask[x < cutoff] = 0.
+      mask[p_mat < (1-p)] = 0.
       mask /= (1-p)
 
-      out = x.clone()
-      out *= mask
+      out = x * mask
 
       ###########################################################################
       #                             END OF YOUR CODE                            #
