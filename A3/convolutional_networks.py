@@ -244,7 +244,7 @@ class ThreeLayerConvNet(object):
 
   def __init__(self, input_dims=(3, 32, 32), num_filters=32, filter_size=7,
          hidden_dim=100, num_classes=10, weight_scale=1e-3, reg=0.0,
-         dtype=torch.float, device='cpu'):
+         dtype=torch.float64, device='cpu'):
     """
     Initialize a new network.
     Inputs:
@@ -446,7 +446,7 @@ class DeepConvNet(object):
                batchnorm=False,
                num_classes=10, weight_scale=1e-3, reg=0.0,
                weight_initializer=None,
-               dtype=torch.float, device='cpu'):
+               dtype=torch.float64, device='cpu'):
     """
     Initialize a new network.
 
@@ -492,8 +492,8 @@ class DeepConvNet(object):
 
     # {conv - [batchnorm?] - relu - [pool?]} x (L - 1) - linear
 
-    if weight_scale == 'kaiming':
-      for i in range(self.num_layers):
+    for i in range(self.num_layers):
+      if weight_scale == 'kaiming':
         if i == 0:  # first conv
           self.params[f'W{i}'] = kaiming_initializer(input_dims[0], num_filters[i], K=3, device=device, dtype=dtype)
           if self.batchnorm:
@@ -507,8 +507,7 @@ class DeepConvNet(object):
           if self.batchnorm:
             self.params[f'gamma{i}'] = torch.ones(num_filters[i], device=device, dtype=dtype)
             self.params[f'beta{i}'] = torch.zeros(num_filters[i], device=device, dtype=dtype)
-    else:
-      for i in range(self.num_layers):
+      else:
         if i == 0:  # first conv
           self.params[f'W{i}'] = torch.normal(0.0, weight_scale, size=(num_filters[i], input_dims[0], 3, 3)).to(dtype).to(device)
           if self.batchnorm:
@@ -640,12 +639,22 @@ class DeepConvNet(object):
 
     # conv layers
     for i in range(w_num):
-      if i in self.max_pools:
-        out, cache = Conv_ReLU_Pool.forward(out, self.params[f'W{i}'], self.params[f'b{i}'], conv_param, pool_param)
+      if self.batchnorm:
+        if i in self.max_pools:
+          out, cache = Conv_BatchNorm_ReLU_Pool.forward(out, self.params[f'W{i}'], \
+            self.params[f'b{i}'], self.params[f'gamma{i}'], self.params[f'beta{i}'], conv_param, self.bn_params[i], pool_param)
+        else:
+          out, cache = Conv_BatchNorm_ReLU.forward(out, self.params[f'W{i}'], \
+            self.params[f'b{i}'], self.params[f'gamma{i}'], self.params[f'beta{i}'], conv_param, self.bn_params[i])
+        outs.append(out)
+        caches.append(cache)
       else:
-        out, cache = Conv_ReLU.forward(out, self.params[f'W{i}'], self.params[f'b{i}'], conv_param)
-      outs.append(out)
-      caches.append(cache)
+        if i in self.max_pools:
+          out, cache = Conv_ReLU_Pool.forward(out, self.params[f'W{i}'], self.params[f'b{i}'], conv_param, pool_param)
+        else:
+          out, cache = Conv_ReLU.forward(out, self.params[f'W{i}'], self.params[f'b{i}'], conv_param)
+        outs.append(out)
+        caches.append(cache)
 
     # linear layer
     scores, cache = Linear.forward(out, self.params[f'W{w_num}'], self.params[f'b{w_num}'])
@@ -677,18 +686,33 @@ class DeepConvNet(object):
     if self.reg > 0:
       for i in range(self.num_layers):
         loss += self.reg * (torch.sum(self.params[f'W{i}'] * self.params[f'W{i}']))
+        # if i < w_num:
+        #   loss += self.reg * (torch.sum(self.params[f'gamma{i}'] * self.params[f'gamma{i}']))
+        #   loss += self.reg * (torch.sum(self.params[f'beta{i}'] * self.params[f'beta{i}']))
 
     ds = {}
 
     ds[f'X{w_num}'], grads[f'W{w_num}'], grads[f'b{w_num}'] = Linear.backward(da, caches.pop())
     for i in reversed(range(w_num)):
-      if i in self.max_pools:
-        ds[f'X{i}'], grads[f'W{i}'], grads[f'b{i}']  = Conv_ReLU_Pool.backward(ds[f'X{i+1}'], caches.pop())
+      if self.batchnorm:
+        if i in self.max_pools:
+          ds[f'X{i}'], grads[f'W{i}'], grads[f'b{i}'], grads[f'gamma{i}'], grads[f'beta{i}'] = \
+            Conv_BatchNorm_ReLU_Pool.backward(ds[f'X{i+1}'], caches.pop())
+        else:
+          ds[f'X{i}'], grads[f'W{i}'], grads[f'b{i}'], grads[f'gamma{i}'], grads[f'beta{i}'] = \
+            Conv_BatchNorm_ReLU.backward(ds[f'X{i+1}'], caches.pop())
       else:
-        ds[f'X{i}'], grads[f'W{i}'], grads[f'b{i}']  = Conv_ReLU.backward(ds[f'X{i+1}'], caches.pop())
+        if i in self.max_pools:
+          ds[f'X{i}'], grads[f'W{i}'], grads[f'b{i}']  = Conv_ReLU_Pool.backward(ds[f'X{i+1}'], caches.pop())
+        else:
+          ds[f'X{i}'], grads[f'W{i}'], grads[f'b{i}']  = Conv_ReLU.backward(ds[f'X{i+1}'], caches.pop())
 
-    for i in range(w_num):
+    # if self.reg > 0:
+    for i in range(self.num_layers):
       grads[f'W{i}'] += 2 * self.reg * self.params[f'W{i}']
+      # if i < w_num:
+      #   grads[f'gamma{i}'] += 2 * self.reg * self.params[f'gamma{i}']
+      #   grads[f'beta{i}'] += 2 * self.reg * self.params[f'beta{i}']
 
     ############################################################################
     #                             END OF YOUR CODE                             #
@@ -747,7 +771,7 @@ def create_convolutional_solver_instance(data_dict, dtype, device):
   return solver
 
 def kaiming_initializer(Din, Dout, K=None, relu=True, device='cpu',
-                        dtype=torch.float32):
+                        dtype=torch.float64):
   """
   Implement Kaiming initialization for linear and convolution layers.
   
@@ -861,7 +885,7 @@ class BatchNorm(object):
     eps = bn_param.get('eps', 1e-5)
     momentum = bn_param.get('momentum', 0.9)
 
-    N, D = x.shape
+    _, D = x.shape
 
     running_mean = bn_param.get('running_mean', torch.zeros(D, dtype=x.dtype, device=x.device))
     running_var = bn_param.get('running_var', torch.zeros(D, dtype=x.dtype, device=x.device))
@@ -1091,7 +1115,8 @@ class SpatialBatchNorm(object):
 
     N, C, H, W = dout.shape
     dout = dout.permute(0, 2, 3, 1).reshape(-1, C)  # (N, C, H, W) --> (N, H, W, C)
-    dx, dgamma, dbeta = BatchNorm.backward_alt(dout, cache)
+    dx, dgamma, dbeta = BatchNorm.backward(dout, cache)
+    # dx, dgamma, dbeta = BatchNorm.backward_alt(dout, cache)  # will induce large errors but less time
     dx = dx.reshape(N, H, W, C).permute(0, 3, 1, 2)  # (N, H, W, C) --> (N, C, H, W)
 
     ###########################################################################
