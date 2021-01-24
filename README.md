@@ -13,7 +13,7 @@
 |2-2| [Two-layer Neural Network](https://web.eecs.umich.edu/~justincj/teaching/eecs498/FA2020/assignment2.html) / [code](https://github.com/hyungkwonko/2021-winter-seminar/blob/main/A2/two_layer_net.ipynb)
 |3-1| [Fully-Connected Neural Network](https://web.eecs.umich.edu/~justincj/teaching/eecs498/FA2020/assignment3.html) / [code](https://github.com/hyungkwonko/2021-winter-seminar/blob/main/A3/fully_connected_networks.ipynb)
 |3-2| [Convolutional Neural Network](https://web.eecs.umich.edu/~justincj/teaching/eecs498/FA2020/assignment3.html) / [code](https://github.com/hyungkwonko/2021-winter-seminar/blob/main/A3/convolutional_networks.ipynb)
-|4-1| PyTorch Autograd
+|4-1| [PyTorch Autograd](https://web.eecs.umich.edu/~justincj/teaching/eecs498/FA2020/assignment4.html) / [code](https://github.com/hyungkwonko/2021-winter-seminar/blob/main/A4/pytorch_autograd_and_nn.ipynb)
 |4-2| Image Captioning with Recurrent Neural Networks
 |4-3| Network Visualization
 |4-4| Style Transfer
