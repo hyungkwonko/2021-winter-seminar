@@ -37,8 +37,8 @@ class FeatureExtractor(object):
       self.mobilenet.add_module('LastAvgPool', nn.AvgPool2d(4, 4)) # input: N x 1280 x 4 x 4
     
     self.mobilenet.eval()
-    if verbose:
-      summary(self.mobilenet, (3, 112, 112))
+    # if verbose:
+    #   summary(self.mobilenet, (3, 112, 112))
   
   def extract_mobilenet_feature(self, img, verbose=False):
     """
@@ -450,7 +450,9 @@ class CaptioningRNN(nn.Module):
         self._null = word_to_idx['<NULL>']
         self._start = word_to_idx.get('<START>', None)
         self._end = word_to_idx.get('<END>', None)
-        self.ignore_index = ignore_index  
+        self.ignore_index = ignore_index
+
+        self.hidden_dim = hidden_dim
         
         ##########################################################################
         # TODO: Initialize the image captioning module. Refer to the TODO        #
@@ -483,6 +485,7 @@ class CaptioningRNN(nn.Module):
           self.feature = FeatureExtractor(pooling=False, verbose=True, device=device, dtype=dtype)
           self.embedding = WordEmbedding(vocab_size, wordvec_dim, device=device, dtype=dtype)
           self.attention_lstm = AttentionLSTM(wordvec_dim, hidden_dim, device=device, dtype=dtype)
+          self.linear3 = nn.Linear(1280, hidden_dim).to(device=device).to(dtype=dtype)
         self.linear2 = nn.Linear(hidden_dim, vocab_size).to(device=device).to(dtype=dtype)
   
         #############################################################################
@@ -547,6 +550,10 @@ class CaptioningRNN(nn.Module):
           h1 = self.lstm.forward(x_embed, h0)
         elif self.cell_type == 'attention':
           h0 = self.feature.extract_mobilenet_feature(images)
+          h0 = h0.permute(0, 2, 3, 1)
+          h0 = h0.reshape(-1, h0.shape[-1])
+          h0 = self.linear3(h0).reshape(-1, 4, 4, self.hidden_dim)
+          h0 = h0.permute(0, 3, 1, 2)
           x_embed = self.embedding.forward(captions_in)
           h1 = self.attention_lstm.forward(x_embed, h0)
         out = self.linear2(h1)  # h1:(N, T, H) -> out:(N, T, V)
@@ -846,9 +853,9 @@ def dot_product_attention(prev_h, A):
     attn_weights = torch.softmax(attn_weights, dim=1)  # (N, 16)
 
     for i in range(N):
-      print(A_tilde[i].shape)
-      print(attn_weights[i].shape)
-      print(attn[i].shape)
+      # print(A_tilde[i].shape)
+      # print(attn_weights[i].shape)
+      # print(attn[i].shape)
       attn[i] = torch.matmul(A_tilde[i], attn_weights[i].t())
 
     attn_weights = attn_weights.reshape(N, D_a, D_a)
