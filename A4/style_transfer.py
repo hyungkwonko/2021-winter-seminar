@@ -31,7 +31,7 @@ def content_loss(content_weight, content_current, content_original):
     # TODO: Compute the content loss for style transfer.                         #
     ##############################################################################
     # Replace "pass" statement with your code
-    pass
+    return content_weight * torch.sum((content_current - content_original) ** 2)
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -57,7 +57,16 @@ def gram_matrix(features, normalize=True):
     # Don't forget to implement for both normalized and non-normalized version   #
     ##############################################################################
     # Replace "pass" statement with your code
-    pass
+
+    # ref: https://pytorch.org/tutorials/advanced/neural_style_tutorial.html
+
+    N, C, H, W = features.shape
+
+    features = features.reshape(N * C, H * W)
+    gram = torch.matmul(features, features.t())  # compute the gram product
+
+    if normalize:
+      gram /= (H * W * C)
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -89,7 +98,15 @@ def style_loss(feats, style_layers, style_targets, style_weights):
     # You will need to use your gram_matrix function.                            #
     ##############################################################################
     # Replace "pass" statement with your code
-    pass
+
+    style_loss = torch.tensor(0, dtype=feats[0].dtype, device=feats[0].device)
+
+    for i, k in enumerate(style_layers):
+      gram = gram_matrix(feats[k])
+      style_loss += style_weights[i] * torch.sum((gram - style_targets[i]) ** 2)
+
+    return style_loss
+
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -112,7 +129,20 @@ def tv_loss(img, tv_weight):
     # Your implementation should be vectorized and not require any loops!        #
     ##############################################################################
     # Replace "pass" statement with your code
-    pass
+    tv_loss = torch.tensor(0, dtype=img.dtype, device=img.device)
+
+    N, C, H, W = img.shape
+    img = img.reshape(N*C, H, W)
+
+    img0 = img
+    img0_pushed = torch.cat([img0[:, :, 0].reshape(C, H, -1), img0[:, :, :-1]], dim=2)  # not to use for loop
+    tv_loss += torch.sum((img0_pushed - img0) ** 2)
+
+    img1 = img.permute(0, 2, 1)
+    img1_pushed = torch.cat([img1[:, :, 0].reshape(C, W, -1), img1[:, :, :-1]], dim=2)
+    tv_loss += torch.sum((img1_pushed - img1) ** 2)
+
+    return tv_loss * tv_weight
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################

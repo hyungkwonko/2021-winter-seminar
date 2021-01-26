@@ -16,7 +16,7 @@
 |4-1| [PyTorch Autograd](https://web.eecs.umich.edu/~justincj/teaching/eecs498/FA2020/assignment4.html) / [code](https://github.com/hyungkwonko/2021-winter-seminar/blob/main/A4/pytorch_autograd_and_nn.ipynb)
 |4-2| [Image Captioning with Recurrent Neural Networks](https://web.eecs.umich.edu/~justincj/teaching/eecs498/FA2020/assignment4.html) / [code](https://github.com/hyungkwonko/2021-winter-seminar/blob/main/A4/rnn_lstm_attention_captioning.ipynb)
 |4-3| [Network Visualization](https://web.eecs.umich.edu/~justincj/teaching/eecs498/FA2020/assignment4.html) / [code](https://github.com/hyungkwonko/2021-winter-seminar/blob/main/A4/network_visualization.ipynb)
-|4-4| Style Transfer
+|4-4| [Style Transfer](https://web.eecs.umich.edu/~justincj/teaching/eecs498/FA2020/assignment4.html) / [code](https://github.com/hyungkwonko/2021-winter-seminar/blob/main/A4/style_transfer.ipynb)
 |5-1| Single-Stage Detector
 |5-2| Two-Stage Detector
 |6-1| Variational Autoencoder

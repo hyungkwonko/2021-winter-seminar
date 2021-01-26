@@ -4,6 +4,7 @@
 *.pth
 *.pkl
 A4/datasets/*
+*.npz
 *.jpg
 
 # Byte-compiled / optimized / DLL files
