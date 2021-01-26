@@ -47,7 +47,13 @@ def compute_saliency_maps(X, y, model):
   # Hint: X.grad.data stores the gradients                                     #
   ##############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  scores = model(X)
+  loss = nn.functional.cross_entropy(scores, y)
+  loss.backward()
+
+  saliency = X.grad.data.abs().max(dim=1)[0]
+
   ##############################################################################
   #               END OF YOUR CODE                                             #
   ##############################################################################
@@ -73,7 +79,7 @@ def make_adversarial_attack(X, target_y, model, max_iter=100, verbose=True):
   X_adv = X.clone()
   X_adv = X_adv.requires_grad_()
   
-  learning_rate = 1
+  learning_rate = 0.5
   ##############################################################################
   # TODO: Generate an adversarial attack X_adv that the model will classify    #
   # as the class target_y. You should perform gradient ascent on the score     #
@@ -88,7 +94,25 @@ def make_adversarial_attack(X, target_y, model, max_iter=100, verbose=True):
   # You can print your progress over iterations to check your algorithm.       #
   ##############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  for i in range(max_iter):
+
+    scores = model(X_adv)
+
+    if scores.argmax().item() == target_y:
+      print(f"Success! @ iter: {i}/{max_iter-1}")
+      break
+
+    scores[:, target_y].backward()
+
+    if i % 10 == 0 or i == (max_iter-1):
+      print(f"ITERATION: ({i}/{max_iter-1})\score: {scores[:, target_y].item()}")
+
+    with torch.no_grad():  # we do not consider the computational graph for backprop
+      X_adv += learning_rate * X_adv.grad.data / torch.norm(X_adv.grad.data)
+      # X_adv += 0.01 * learning_rate * X_adv.grad.data / torch.abs(X_adv.grad.data).mean()  # this is larger (should work with smaller lr)
+      X_adv.grad.zero_()
+
   ##############################################################################
   #                             END OF YOUR CODE                               #
   ##############################################################################
@@ -123,7 +147,17 @@ def class_visualization_step(img, target_y, model, **kwargs):
     # after each step.                                                     #
     ########################################################################
     # Replace "pass" statement with your code
-    pass
+    
+    scores = model(img)
+    reg = l2_reg * torch.sum(img * img)
+
+    out = scores[:, target_y][0] - reg
+    out.backward()
+
+    with torch.no_grad():  # we do not consider the computational graph for backprop
+      img += learning_rate * img.grad.data / torch.norm(img.grad.data)
+      img.grad.zero_()    
+
     ########################################################################
     #                             END OF YOUR CODE                         #
     ########################################################################
