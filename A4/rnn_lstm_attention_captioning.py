@@ -471,21 +471,17 @@ class CaptioningRNN(nn.Module):
         ##########################################################################
         # Replace "pass" statement with your code
 
-        if self.cell_type == 'rnn':
+        self.linear1 = nn.Linear(1280, hidden_dim).to(device=device).to(dtype=dtype)
+        self.embedding = WordEmbedding(vocab_size, wordvec_dim, device=device, dtype=dtype)
+        if self.cell_type == 'rnn' or self.cell_type == 'lstm':
           self.feature = FeatureExtractor(pooling=True, verbose=False, device=device, dtype=dtype)
-          self.linear1 = nn.Linear(1280, hidden_dim).to(device=device).to(dtype=dtype)
-          self.embedding = WordEmbedding(vocab_size, wordvec_dim, device=device, dtype=dtype)
-          self.rnn = RNN(wordvec_dim, hidden_dim, device=device, dtype=dtype)  # should use wordvec_dim instead of input_dim
-        elif self.cell_type == 'lstm':
-          self.feature = FeatureExtractor(pooling=True, verbose=False, device=device, dtype=dtype)
-          self.linear1 = nn.Linear(1280, hidden_dim).to(device=device).to(dtype=dtype)
-          self.embedding = WordEmbedding(vocab_size, wordvec_dim, device=device, dtype=dtype)
-          self.lstm = LSTM(wordvec_dim, hidden_dim, device=device, dtype=dtype)
+          if self.cell_type == 'rnn':
+            self.model = RNN(wordvec_dim, hidden_dim, device=device, dtype=dtype)  # should use wordvec_dim instead of input_dim
+          else:
+            self.model = LSTM(wordvec_dim, hidden_dim, device=device, dtype=dtype)
         elif self.cell_type == 'attention':
           self.feature = FeatureExtractor(pooling=False, verbose=True, device=device, dtype=dtype)
-          self.embedding = WordEmbedding(vocab_size, wordvec_dim, device=device, dtype=dtype)
-          self.attention_lstm = AttentionLSTM(wordvec_dim, hidden_dim, device=device, dtype=dtype)
-          self.linear3 = nn.Linear(1280, hidden_dim).to(device=device).to(dtype=dtype)
+          self.model = AttentionLSTM(wordvec_dim, hidden_dim, device=device, dtype=dtype)
         self.linear2 = nn.Linear(hidden_dim, vocab_size).to(device=device).to(dtype=dtype)
   
         #############################################################################
@@ -538,24 +534,15 @@ class CaptioningRNN(nn.Module):
         ############################################################################
         # Replace "pass" statement with your code
 
-        if self.cell_type == 'rnn':
-          h0 = self.feature.extract_mobilenet_feature(images)
+        h0 = self.feature.extract_mobilenet_feature(images)
+        if self.cell_type == 'rnn' or self.cell_type == 'lstm':
           h0 = self.linear1(h0)  # (N, H)
-          x_embed = self.embedding.forward(captions_in)  # caption_in:(N, T) -> x_embed:(N, T, W)
-          h1 = self.rnn.forward(x_embed, h0)  # x_embed:(N, T, V) -> h1:(N, T, H)
-        elif self.cell_type == 'lstm':
-          h0 = self.feature.extract_mobilenet_feature(images)
-          h0 = self.linear1(h0)
-          x_embed = self.embedding.forward(captions_in)
-          h1 = self.lstm.forward(x_embed, h0)
         elif self.cell_type == 'attention':
-          h0 = self.feature.extract_mobilenet_feature(images)
           h0 = h0.permute(0, 2, 3, 1)
-          h0 = h0.reshape(-1, h0.shape[-1])
-          h0 = self.linear3(h0).reshape(-1, 4, 4, self.hidden_dim)
+          h0 = self.linear1(h0) #.reshape(-1, 4, 4, self.hidden_dim)
           h0 = h0.permute(0, 3, 1, 2)
-          x_embed = self.embedding.forward(captions_in)
-          h1 = self.attention_lstm.forward(x_embed, h0)
+        x_embed = self.embedding.forward(captions_in)  # caption_in:(N, T) -> x_embed:(N, T, W)
+        h1 = self.model.forward(x_embed, h0)  # x_embed:(N, T, V) -> h1:(N, T, H)
         out = self.linear2(h1)  # h1:(N, T, H) -> out:(N, T, V)
         loss = temporal_softmax_loss(out, captions_out, ignore_index=self.ignore_index)
 
@@ -626,8 +613,15 @@ class CaptioningRNN(nn.Module):
         # Replace "pass" statement with your code
 
         h = self.feature.extract_mobilenet_feature(images, verbose=False)
-        h = self.linear1(h)  # (N, H)
-        c = torch.zeros_like(h)
+        if self.cell_type == 'rnn' or self.cell_type == 'lstm':
+          h = self.linear1(h)  # (N, H)
+          c = torch.zeros_like(h)
+        elif self.cell_type == 'attention':
+          A = h.permute(0, 2, 3, 1)
+          A = self.linear1(A)
+          A = A.permute(0, 3, 1, 2)
+          h = A.mean(dim=(2, 3))
+          c = h.clone()
 
         for i in range(max_length):
           if i == 0:
@@ -635,18 +629,21 @@ class CaptioningRNN(nn.Module):
           else:
             x_embed = self.embedding.forward(out)
           if self.cell_type == 'rnn':
-            h = self.rnn.step_forward(x_embed, h)  # h: (3, 512)
+            h = self.model.step_forward(x_embed, h)
           elif self.cell_type == 'lstm':
-            h, c = self.lstm.step_forward(x_embed, h, c)
-          out = self.linear2(h)  # out: (3, 864)
+            h, c = self.model.step_forward(x_embed, h, c)  # works fine
+          elif self.cell_type == 'attention':
+            attn, attn_weights = dot_product_attention(h, A)
+            attn_weights_all[:, i] = attn_weights
+            h, c = self.model.step_forward(x_embed, h, c, attn)  # works fine
+
+          out = self.linear2(h)
           out = torch.argmax(out, dim=1)
           captions[:, i] = out
 
           # eecs598.utils.decode_captions <- already in (do not need to care about stopping when predicting <END>)
           # if out == self._end:
           #   break
-        return captions
-
 
         ############################################################################
         #                             END OF YOUR CODE                             #
@@ -695,13 +692,8 @@ def lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b, attn=None, Wattn=None):
     N, H = prev_c.shape
 
     a = torch.matmul(x, Wx) + torch.matmul(prev_h, Wh) + b # (N, 4H)
-
     if attn != None:
-      Atmp = torch.zeros(N, 4 * H)
-      attn = attn.reshape(N, H, -1)
-      for i in range(N):
-        Atmp[i] = torch.matmul(attn[i].t(), Wattn)
-      a += Atmp
+      a += torch.matmul(attn, Wattn)
 
     i = torch.sigmoid(a[:, :H])
     f = torch.sigmoid(a[:, H:2*H])
@@ -843,22 +835,14 @@ def dot_product_attention(prev_h, A):
     # You will use this function for `attention_forward` and `sample_caption`   #
     # HINT: Make sure you reshape attn_weights back to (N, 4, 4)!               #
     #############################################################################
-    # Replace "pass" statement with your code
-
-    attn_weights = torch.zeros(N, D_a ** 2)
-    attn = torch.zeros(N, H)
-    A_tilde = A.reshape(N, H, -1)
-    for i in range(N):
-      attn_weights[i] = torch.matmul(A_tilde[i].t(), prev_h[i].reshape(H, 1)).reshape(-1) / (H ** 0.5)
-    attn_weights = torch.softmax(attn_weights, dim=1)  # (N, 16)
-
-    for i in range(N):
-      # print(A_tilde[i].shape)
-      # print(attn_weights[i].shape)
-      # print(attn[i].shape)
-      attn[i] = torch.matmul(A_tilde[i], attn_weights[i].t())
-
-    attn_weights = attn_weights.reshape(N, D_a, D_a)
+    # Replace "pass" statement with your 
+    
+    A_tilde = A.reshape(N, H, -1)  # A_tilde:(N, H, 16)
+    h_tilde = prev_h.reshape(N, 1, H) # h_tilde:(N, 1, H)
+    attn_weights = (torch.bmm(h_tilde, A_tilde).div(H ** 0.5)).reshape(N, -1, 1)  # (N, 1, H) * (N, H, 16) = attn_weights:(N, 1, 16) -> (N, 16, 1)
+    attn_weights_tilde = F.softmax(attn_weights, dim=1) # no change (N, 16, 1)
+    attn = torch.bmm(A_tilde, attn_weights_tilde).reshape(N, H)  # (N, H, 16) * (N, 16, 1) = (N, H, 1) -> attn:(N, H)
+    attn_weights = attn_weights_tilde.reshape(N, D_a, D_a) # (N, 16, 1) -> (N, 4, 4)
 
     ##############################################################################
     #                               END OF YOUR CODE                             #
@@ -919,8 +903,8 @@ def attention_forward(x, A, Wx, Wh, Wattn, b):
         attn, _ = dot_product_attention(h0, A)
         h[:, i, :], c = lstm_step_forward(x[:, i, :], h0, c0, Wx, Wh, b, attn=attn, Wattn=Wattn)
       else:
-        h[:, i, :], c = lstm_step_forward(x[:, i, :], h[:, i-1, :], c, Wx, Wh, b, attn=attn, Wattn=Wattn)
-      attn, _ = dot_product_attention(h[:, i, :], A)
+        attn, _ = dot_product_attention(h[:, i, :].clone(), A)  # don't forget to put .clone()
+        h[:, i, :], c = lstm_step_forward(x[:, i, :], h[:, i-1, :].clone(), c, Wx, Wh, b, attn=attn, Wattn=Wattn)
 
     ##############################################################################
     #                               END OF YOUR CODE                             #
