@@ -62,7 +62,7 @@ def one_hot(labels, class_size):
         targets[i, label] = 1
     return targets
 
-def train_vae(epoch, model, train_loader, cond=False):
+def train_vae(epoch, model, train_loader, device, cond=False):
     """
     Train a VAE or CVAE!
 
@@ -77,11 +77,11 @@ def train_vae(epoch, model, train_loader, cond=False):
     train_loss = 0
     num_classes = 10
     loss = None
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
     for batch_idx, (data, labels) in enumerate(train_loader):
-        data = data.to(device='cuda:0')
+        data = data.to(device=device)
         if cond:
-          one_hot_vec = one_hot(labels, num_classes).to(device='cuda')
+          one_hot_vec = one_hot(labels, num_classes).to(device=device)
           recon_batch, mu, logvar = model(data, one_hot_vec)
         else:
           recon_batch, mu, logvar = model(data)
@@ -90,8 +90,4 @@ def train_vae(epoch, model, train_loader, cond=False):
         loss.backward()
         train_loss += loss.data
         optimizer.step()
-    print('Train Epoch: {} \tLoss: {:.6f}'.format(
-        epoch, loss.data))
-
-
-
+    print('Train Epoch: {} \tLoss: {:.6f}'.format(epoch, loss.data))

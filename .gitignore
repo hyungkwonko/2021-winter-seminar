@@ -6,6 +6,13 @@
 A4/datasets/*
 *.npz
 *.jpg
+*.tar
+*.txt
+
+A5/mAP/*
+A5/VOCdevkit/*
+
+A6/MNIST_data/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

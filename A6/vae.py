@@ -20,7 +20,9 @@ class VAE(nn.Module):
         super(VAE, self).__init__()
         self.input_size = input_size # H*W
         self.latent_size = latent_size # Z
-        self.hidden_dim = None # H_d
+        self.hidden_dim1 = 512
+        self.hidden_dim2 = 256
+        self.hidden_dim3 = 64
         self.encoder = None
         self.mu_layer = None
         self.logvar_layer = None
@@ -35,18 +37,63 @@ class VAE(nn.Module):
         # vectors; the mean and log-variance estimates will both be tensors of shape (N, Z).       #
         ############################################################################################
         # Replace "pass" statement with your code
-        pass
+        self.encoder = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(input_size, self.hidden_dim1),
+            nn.BatchNorm1d(self.hidden_dim1),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim1, self.hidden_dim2),
+            nn.BatchNorm1d(self.hidden_dim2),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim2, self.hidden_dim3),
+            nn.BatchNorm1d(self.hidden_dim3),
+            nn.ReLU()
+        )
+
+        self.mu_layer = nn.Sequential(
+            nn.Linear(self.hidden_dim3, self.latent_size),
+            nn.BatchNorm1d(self.latent_size),
+            nn.ReLU()
+        )
+
+        self.logvar_layer = nn.Sequential(
+            nn.Linear(self.hidden_dim3, self.latent_size),
+            nn.BatchNorm1d(self.latent_size),
+            nn.ReLU()
+        )
         ############################################################################################
         # TODO: Implement the fully-connected decoder architecture described in the notebook.      #
         # Specifically, self.decoder should be a network that inputs a batch of latent vectors of  #
         # shape (N, Z) and outputs a tensor of estimated images of shape (N, 1, H, W).             #
         ############################################################################################
         # Replace "pass" statement with your code
-        pass
+        self.decoder = nn.Sequential(
+            nn.Linear(self.latent_size, self.hidden_dim3),
+            nn.BatchNorm1d(self.hidden_dim3),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim3, self.hidden_dim2),
+            nn.BatchNorm1d(self.hidden_dim2),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim2, self.hidden_dim1),
+            nn.BatchNorm1d(self.hidden_dim1),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim1, self.input_size),
+            nn.Sigmoid(),
+            nn.Unflatten(-1, (1, 28, 28))
+        )
         ############################################################################################
         #                                      END OF YOUR CODE                                    #
         ############################################################################################
 
+        def init_weights(m):
+            if type(m) == nn.Linear:
+                torch.nn.init.xavier_uniform(m.weight)
+                m.bias.data.fill_(0.01)
+
+        self.encoder.apply(init_weights)
+        self.decoder.apply(init_weights)
+        self.mu_layer.apply(init_weights)
+        self.logvar_layer.apply(init_weights)
 
     def forward(self, x):
         """
@@ -71,11 +118,21 @@ class VAE(nn.Module):
         # (3) Pass z through the decoder to resconstruct x                                         #
         ############################################################################################
         # Replace "pass" statement with your code
-        pass
+
+        latent = self.encoder(x)
+        mu = self.mu_layer(latent)
+        logvar = self.logvar_layer(latent)
+        z = reparametrize(mu, logvar)
+        x_hat = self.decoder(z)
+        
         ############################################################################################
         #                                      END OF YOUR CODE                                    #
         ############################################################################################
         return x_hat, mu, logvar
+
+    def sample(self, z):
+        gen_imgs = self.decoder(z)
+        return gen_imgs
 
 
 class CVAE(nn.Module):
@@ -84,7 +141,11 @@ class CVAE(nn.Module):
         self.input_size = input_size # H*W
         self.latent_size = latent_size # Z
         self.num_classes = num_classes # C
-        self.hidden_dim = None # H_d
+
+        self.hidden_dim1 = 512
+        self.hidden_dim2 = 256
+        self.hidden_dim3 = 64
+
         self.encoder = None
         self.mu_layer = None
         self.logvar_layer = None
@@ -97,14 +158,60 @@ class CVAE(nn.Module):
         # to posterior mu and posterior log-variance estimates of the latent space (N, Z)          #
         ############################################################################################
         # Replace "pass" statement with your code
-        pass
+        self.encoder = nn.Sequential(
+            nn.Linear(self.input_size + self.num_classes, self.hidden_dim1),
+            nn.BatchNorm1d(self.hidden_dim1),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim1, self.hidden_dim2),
+            nn.BatchNorm1d(self.hidden_dim2),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim2, self.hidden_dim3),
+            nn.BatchNorm1d(self.hidden_dim3),
+            nn.ReLU()
+        )
+
+        self.mu_layer = nn.Sequential(
+            nn.Linear(self.hidden_dim3, self.latent_size),
+            nn.BatchNorm1d(self.latent_size),
+            nn.ReLU()
+        )
+
+        self.logvar_layer = nn.Sequential(
+            nn.Linear(self.hidden_dim3, self.latent_size),
+            nn.BatchNorm1d(self.latent_size),
+            nn.ReLU()
+        )
 
         ############################################################################################
         # TODO: Define a fully-connected decoder as described in the notebook that transforms the  #
         # latent space (N, Z + C) to the estimated images of shape (N, 1, H, W).                   #
         ############################################################################################
         # Replace "pass" statement with your code
-        pass
+        self.decoder = nn.Sequential(
+            nn.Linear(self.latent_size + self.num_classes, self.hidden_dim3),
+            nn.BatchNorm1d(self.hidden_dim3),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim3, self.hidden_dim2),
+            nn.BatchNorm1d(self.hidden_dim2),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim2, self.hidden_dim1),
+            nn.BatchNorm1d(self.hidden_dim1),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim1, self.input_size),
+            nn.Sigmoid(),
+            nn.Unflatten(-1, (1, 28, 28))
+        )
+
+        def init_weights(m):
+            if type(m) == nn.Linear:
+                torch.nn.init.xavier_uniform(m.weight)
+                m.bias.data.fill_(0.01)
+
+        self.encoder.apply(init_weights)
+        self.decoder.apply(init_weights)
+        self.mu_layer.apply(init_weights)
+        self.logvar_layer.apply(init_weights)
+
         ############################################################################################
         #                                      END OF YOUR CODE                                    #
         ############################################################################################
@@ -134,7 +241,16 @@ class CVAE(nn.Module):
         # (3) Pass concatenation of z and one hot vectors through the decoder to resconstruct x    #
         ############################################################################################
         # Replace "pass" statement with your code
-        pass
+
+        x = x.reshape(x.shape[0], -1)
+        x = torch.cat([x, c], dim=1)
+        latent = self.encoder(x)
+        mu = self.mu_layer(latent)
+        logvar = self.logvar_layer(latent)
+        z = reparametrize(mu, logvar)
+        z = torch.cat([z, c], dim=1)
+        x_hat = self.decoder(z)
+
         ############################################################################################
         #                                      END OF YOUR CODE                                    #
         ############################################################################################
@@ -170,7 +286,31 @@ def reparametrize(mu, logvar):
     # posterior mu and sigma to estimate z                                                         #
     ################################################################################################
     # Replace "pass" statement with your code
-    pass
+
+    epsilon = torch.randn(mu.shape, device=mu.device)
+    z = torch.exp(logvar / 2) * epsilon + mu  # works for Conditional VAE
+    # z = logvar * epsilon + mu  # works for Vanilla VAE
+
+    # Vanilla VAE에 std쓰면 안되는 이유
+    # z = logvar * epsilon + mu 이렇게 하면 되고
+    # z = std * epsilon + mu 이렇게 하면 안될까?
+    # mu를 출력을 해보면, latent=5 라고 하면 [0.1188, 0.6053, 0.0000, 0.1911, 0.2571] 이런 식이다.
+    # std는 출력을 해보면, latent=5 라고 하면 [1.6428, 1.9556, 1.0000, 1.1322, 1.0000] 이런 식이다.
+    # logvar는 출력을 해보면, latent=5 라고 하면 [0.0000, 0.0000, 0.9187, 0.3889, 0.1121] 이런 식이다.
+    # 왜 std가 무조건 1이상으로 크게 나오냐면 exp를 씌워서 그럼
+    # 결론: mu에 비해서 std가 너무 큰데, 때문에 sample(inference)시의 z 값과 reparam으로 나오는 z에 차이가 있음.
+    # 그렇다고 loss에서 튀어버리는것은 더 큰 문제가 되기 때문에 log(std^2)에서 std = 0이면 -inf되니까
+    # 최종 결론: 어쩔 수 없으니 그냥 logvar *epsilon으로 하길 추천
+
+    # Conditional VAE에 logvar쓰면 안되는 이유
+    # 이건 잘 모르겠음... 정석대로면 std 쓰는게 사실 맞는 거니까 그래서 그런 것 같음
+
+    # -----------
+    # Vanilla VAE / Conditional VAE 둘 다 z 값 거의 똑같음
+    # mu의 mean: 0.3932 --> training이 진행됨에 따라 떨어져서 0.02~0.06 적당히 수렴
+    # logvar의 mean: 0.3932 --> training이 진행됨에 따라 떨어져서 0.02~0.06 적당히 수렴
+    # std의 mean: 1.2838 --> training이 진행됨에 따라 떨어져서 1.0486 적당히 수렴
+
     ################################################################################################
     #                              END OF YOUR CODE                                                #
     ################################################################################################
@@ -195,7 +335,12 @@ def loss_function(x_hat, x, mu, logvar):
     # TODO: Compute negative variational lowerbound loss as described in the notebook              #
     ################################################################################################
     # Replace "pass" statement with your code
-    pass
+
+    recon_loss = nn.functional.mse_loss(x_hat, x)
+    kld_loss = torch.mean(-0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp(), dim=1), dim=0)
+    # kld_loss = torch.mean(-0.5 * torch.sum(1 + 2 * torch.log(logvar + 1e-2) - mu ** 2 - logvar ** 2, dim=1), dim=0)  # unstable
+    loss = recon_loss + kld_loss
+
     ################################################################################################
     #                            END OF YOUR CODE                                                  #
     ################################################################################################
