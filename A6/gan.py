@@ -32,8 +32,9 @@ def sample_noise(batch_size, noise_dim, dtype=torch.float, device='cpu'):
   # TODO: Implement sample_noise.                                              #
   ##############################################################################
   # Replace "pass" statement with your code
-  pass
-
+  noise = torch.rand(batch_size, noise_dim).to(dtype).to(device)
+  mask = torch.rand(batch_size, noise_dim).to(dtype).to(device)
+  noise[mask < 0.5] *= -1
   ##############################################################################
   #                              END OF YOUR CODE                              #
   ##############################################################################
@@ -51,7 +52,18 @@ def discriminator():
   # TODO: Implement discriminator.                                           #
   ############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  model = nn.Sequential(
+    nn.Linear(784, 256),
+    # nn.BatchNorm1d(256),
+    nn.LeakyReLU(),
+    nn.Linear(256, 256),
+    # nn.BatchNorm1d(256),
+    nn.LeakyReLU(),
+    nn.Linear(256, 1),
+    nn.Sigmoid(),
+  )
+
   ############################################################################
   #                             END OF YOUR CODE                             #
   ############################################################################
@@ -68,7 +80,18 @@ def generator(noise_dim=NOISE_DIM):
   # TODO: Implement generator.                                               #
   ############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  model = nn.Sequential(
+    nn.Linear(noise_dim, 1024),
+    nn.ReLU(),
+    # nn.BatchNorm1d(1024),
+    nn.Linear(1024, 1024),
+    nn.ReLU(),
+    # nn.BatchNorm1d(1024),
+    nn.Linear(1024, 784),
+    nn.Tanh(),
+  )
+
   ############################################################################
   #                             END OF YOUR CODE                             #
   ############################################################################
@@ -91,7 +114,15 @@ def discriminator_loss(logits_real, logits_fake):
   # TODO: Implement discriminator_loss.                                        #
   ##############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  true_labels = torch.ones((logits_real.shape[0], 1), device=logits_real.device)
+  fake_labels = torch.zeros((logits_fake.shape[0], 1), device=logits_fake.device)
+  logits_real = logits_real.reshape(-1, 1)
+  logits_fake = logits_fake.reshape(-1, 1)
+
+  loss = torch.nn.functional.binary_cross_entropy_with_logits(logits_real, true_labels)
+  loss += torch.nn.functional.binary_cross_entropy_with_logits(logits_fake, fake_labels)
+
   ##############################################################################
   #                              END OF YOUR CODE                              #
   ##############################################################################
@@ -112,7 +143,10 @@ def generator_loss(logits_fake):
   # TODO: Implement generator_loss.                                            #
   ##############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  true_labels = torch.ones(logits_fake.shape, device=logits_fake.device)
+  loss = torch.nn.functional.binary_cross_entropy_with_logits(logits_fake, true_labels)
+
   ##############################################################################
   #                              END OF YOUR CODE                              #
   ##############################################################################
@@ -134,7 +168,7 @@ def get_optimizer(model):
   # TODO: Implement optimizer.                                                 #
   ##############################################################################
   # Replace "pass" statement with your code
-  pass
+  optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, betas=(0.5, 0.999))
   ##############################################################################
   #                              END OF YOUR CODE                              #
   ##############################################################################
@@ -157,7 +191,10 @@ def ls_discriminator_loss(scores_real, scores_fake):
   # TODO: Implement ls_discriminator_loss.                                     #
   ##############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  loss = ((1. - scores_real) ** 2).mean() * 0.5
+  loss += (scores_fake ** 2).mean() * 0.5
+
   ##############################################################################
   #                              END OF YOUR CODE                              #
   ##############################################################################
@@ -178,7 +215,9 @@ def ls_generator_loss(scores_fake):
   # TODO: Implement ls_generator_loss.                                         #
   ##############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  loss = ((1. - scores_fake) ** 2).mean() * 0.5
+
   ##############################################################################
   #                              END OF YOUR CODE                              #
   ##############################################################################
@@ -195,7 +234,23 @@ def build_dc_classifier():
   # TODO: Implement build_dc_classifier.                                     #
   ############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  # H' = 1 + (H + 2 * pad - HH) / stride
+  # W' = 1 + (W + 2 * pad - WW) / stride
+  model = torch.nn.Sequential(
+    nn.Unflatten(-1, (1, 28, 28)),
+    nn.Conv2d(1, 32, (5, 5), stride=1),
+    nn.LeakyReLU(0.1),
+    nn.MaxPool2d((2, 2), stride=2),  # (32, 24, 24) -> (32, 12, 12)
+    nn.Conv2d(32, 64, (5, 5), stride=1),  # (32, 12, 12) -> (64, 8, 8)
+    nn.LeakyReLU(0.1),
+    nn.MaxPool2d((2, 2), stride=2),  # (32, 8, 8) -> (64, 4, 4)
+    nn.Flatten(),
+    nn.Linear(4*4*64, 4*4*64),
+    nn.LeakyReLU(0.1),
+    nn.Linear(4*4*64, 1)
+  )
+
   ############################################################################
   #                             END OF YOUR CODE                             #
   ############################################################################
@@ -212,7 +267,23 @@ def build_dc_generator(noise_dim=NOISE_DIM):
   # TODO: Implement build_dc_generator.                                      #
   ############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  model = torch.nn.Sequential(
+    nn.Linear(noise_dim, 1024),
+    nn.ReLU(),
+    nn.BatchNorm1d(1024),
+    nn.Linear(1024, 7*7*128),
+    nn.ReLU(),
+    nn.BatchNorm1d(7*7*128),
+    nn.Unflatten(-1, (128, 7, 7)),
+    nn.ConvTranspose2d(128, 64, (4, 4), stride=2, padding=1), # (128, 7, 7) -> (64, 14, 14)
+    nn.ReLU(),
+    nn.BatchNorm2d(64),
+    nn.ConvTranspose2d(64, 1, (4, 4), stride=2, padding=1), # (64, 14, 14) -> (1, 28, 28)
+    nn.Tanh(),
+    nn.Flatten()
+  )
+
   ############################################################################
   #                             END OF YOUR CODE                             #
   ############################################################################
