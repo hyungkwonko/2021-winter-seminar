@@ -421,11 +421,11 @@ class SingleStageDetector(nn.Module):
 
     conf_scores, offsets, class_prob = self.pred_network(features, pos_anchor_idx, neg_anchor_idx)
 
-    anc_per_img = torch.prod(torch.tensor(anc_list.shape[1:-1]))
+    _, A, H, W, _ = anc_list.shape
 
     conf_loss = ConfScoreRegression(conf_scores, GT_conf_scores)
     reg_loss = BboxRegression(offsets, GT_offsets)
-    cls_loss = ObjectClassification(class_prob, GT_class, images.shape[0], anc_per_img, pos_anchor_idx)
+    cls_loss = ObjectClassification(class_prob, GT_class, images.shape[0], A * H * W, pos_anchor_idx)
 
     total_loss = w_conf * conf_loss + w_reg * reg_loss + w_cls * cls_loss
 
@@ -465,15 +465,50 @@ class SingleStageDetector(nn.Module):
     ##############################################################################
     # Replace "pass" statement with your code
 
-    # device = images.device
+    with torch.no_grad():
 
-    # features = self.feat_extractor(images)
+      device = images.device
+      # dtype = images.dtype  # not used
 
-    # conf_scores, offsets, class_prob = self.pred_network(features)
-    # conf_scores = conf_scores[conf_scores > thresh]
+      # feature extraction
+      features = self.feat_extractor(images)
 
+      # grid and anchor generation
+      grid_list = GenerateGrid(batch_size=images.shape[0])
+      anc_list = GenerateAnchor(self.anchor_list, grid_list).to(device)
 
-    # final_conf_scores = torchvision.ops.nms(offsets, conf_scores, iou_threshold=nms_thresh)
+      conf_scores, offsets, class_prob = self.pred_network(features)
+      offsets = offsets.permute(0, 1, 3, 4, 2)
+
+      proposals = GenerateProposal(anc_list, offsets, method='YOLO')
+
+      # print(grid_list.shape)
+      # print(anc_list.shape)     # (B, A, H, W, 4)
+      # print(proposals.shape)    # (B, A, H, W, 4)
+      # print(features.shape)     # (B, 1280, H, W)
+      # print(conf_scores.shape)  # (B, A, H, W)
+      # print(offsets.shape)      # (B, A, H, W, 4)
+      # print(class_prob.shape)   # (B, C, H, W)
+
+      (B, A, H, W) = conf_scores.shape
+
+      conf_scores = conf_scores.reshape(B, -1)     # (B, A*H*W)
+      offsets = offsets.reshape(B, -1, 4)          # (B, A*H*W, 4)
+      proposals = proposals.reshape(B, -1, 4)      # (B, A*H*W, 4)
+      class_prob = class_prob.permute(0, 2, 3, 1)  # (B, H, W, C)
+
+      for i in range(B):
+        index = torch.zeros(conf_scores[i].shape, device=device, dtype=torch.bool)
+        index[conf_scores[i] > thresh] = True
+        tmp_conf_scores = conf_scores[i, index].clone()
+        tmp_proposals = proposals[i, index, :].clone()
+        tmp_class_prob = class_prob[i].argmax(dim=2).expand(A, H, W).reshape(-1)[index].clone()
+
+        keep = torchvision.ops.nms(tmp_proposals, tmp_conf_scores, iou_threshold=nms_thresh)
+        final_proposals.append(tmp_proposals[keep])
+        final_conf_scores.append(tmp_conf_scores[keep].unsqueeze(1))
+        final_class.append(tmp_class_prob[keep].unsqueeze(1))
+
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
