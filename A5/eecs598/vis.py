@@ -73,18 +73,18 @@ def detection_visualizer(img, idx_to_class, bbox=None, pred=None):
 
     if bbox is not None:
         for bbox_idx in range(bbox.shape[0]):
-            one_bbox = bbox[bbox_idx][:4]
+            one_bbox = bbox[bbox_idx][:4].to(torch.int)  # has to be an integer value
             cv2.rectangle(img_copy, (one_bbox[0], one_bbox[1]), (one_bbox[2],
                         one_bbox[3]), (255, 0, 0), 2)
             if bbox.shape[1] > 4: # if class info provided
                 obj_cls = idx_to_class[bbox[bbox_idx][4].item()]
                 cv2.putText(img_copy, '%s' % (obj_cls),
                           (one_bbox[0], one_bbox[1]+15),
-                          cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 0, 255), thickness=1)
+                          cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 255, 0), thickness=1)
 
     if pred is not None:
         for bbox_idx in range(pred.shape[0]):
-            one_bbox = pred[bbox_idx][:4]
+            one_bbox = pred[bbox_idx][:4].to(torch.int)
             cv2.rectangle(img_copy, (one_bbox[0], one_bbox[1]), (one_bbox[2],
                         one_bbox[3]), (0, 255, 0), 2)
             
@@ -93,7 +93,7 @@ def detection_visualizer(img, idx_to_class, bbox=None, pred=None):
                 conf_score = pred[bbox_idx][5].item()
                 cv2.putText(img_copy, '%s, %.2f' % (obj_cls, conf_score),
                             (one_bbox[0], one_bbox[1]+15),
-                            cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 0, 255), thickness=1)
+                            cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 255, 0), thickness=1)
 
     plt.imshow(img_copy)
     plt.axis('off')

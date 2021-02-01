@@ -38,7 +38,18 @@ def GenerateAnchor(anc, grid):
   # generate all the anchor coordinates for each image. Support batch input.   #
   ##############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  A, _ = anc.shape
+  B, H_, W_, _ = grid.shape
+  anchors = torch.zeros((B, A, H_, W_, 4), dtype=anc.dtype, device=anc.device)
+
+  for i in range(A):
+    w, h = anc[i]
+    anchors[:, i, :, :, 0] = grid[:, :, :, 0] - w/2 # x top left
+    anchors[:, i, :, :, 1] = grid[:, :, :, 1] - h/2 # y top left
+    anchors[:, i, :, :, 2] = grid[:, :, :, 0] + w/2 # x bottom right
+    anchors[:, i, :, :, 3] = grid[:, :, :, 1] + h/2 # y bottom right
+
   ##############################################################################
   #                               END OF YOUR CODE                             #
   ##############################################################################
@@ -74,7 +85,45 @@ def GenerateProposal(anchors, offsets, method='YOLO'):
   # compute the proposal coordinates using the transformation formulas above.  #
   ##############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  B, A, H_, W_, _ = anchors.shape
+  proposals = torch.zeros((B, A, H_, W_, 4), dtype=anchors.dtype, device=anchors.device)
+
+  x_tl = anchors[:, :, :, :, 0]
+  y_tl = anchors[:, :, :, :, 1]
+  x_br = anchors[:, :, :, :, 2]
+  y_br = anchors[:, :, :, :, 3]
+
+  x_c = (x_tl + x_br) / 2
+  y_c = (y_tl + y_br) / 2
+  w_a = x_br - x_tl
+  h_a = y_br - y_tl
+
+  tx = offsets[:, :, :, :, 0]
+  ty = offsets[:, :, :, :, 1]
+  tw = offsets[:, :, :, :, 2]
+  th = offsets[:, :, :, :, 3]
+
+  if method == 'YOLO':
+    tx = torch.clamp(tx, min=-0.5, max=0.5)
+    ty = torch.clamp(ty, min=-0.5, max=0.5)
+    proposals[:, :, :, :, 0] = x_c + tx
+    proposals[:, :, :, :, 1] = y_c + ty
+  else:
+    proposals[:, :, :, :, 0] = x_c + tx * w_a
+    proposals[:, :, :, :, 1] = y_c + ty * h_a
+  proposals[:, :, :, :, 2] = w_a * tw.exp()
+  proposals[:, :, :, :, 3] = h_a * th.exp()
+
+  pro_cx = proposals[:, :, :, :, 0].clone()
+  pro_cy = proposals[:, :, :, :, 1].clone()
+  pro_w = proposals[:, :, :, :, 2].clone()
+  pro_h = proposals[:, :, :, :, 3].clone()
+  proposals[:, :, :, :, 0] = pro_cx - pro_w / 2
+  proposals[:, :, :, :, 2] = pro_cx + pro_w / 2
+  proposals[:, :, :, :, 1] = pro_cy - pro_h / 2
+  proposals[:, :, :, :, 3] = pro_cy + pro_h / 2
+
   ##############################################################################
   #                               END OF YOUR CODE                             #
   ##############################################################################
@@ -89,7 +138,7 @@ def IoU(proposals, bboxes):
   Inputs:
   - proposals: Proposals of shape (B, A, H', W', 4)
   - bboxes: Ground-truth boxes from the DataLoader of shape (B, N, 5).
-    Each ground-truth box is represented as tuple (x_lr, y_lr, x_rb, y_rb, class).
+    Each ground-truth box is represented as tuple (x_lt, y_lt, x_rb, y_rb, class).
     If image i has fewer than N boxes, then bboxes[i] will be padded with extra
     rows of -1.
   
@@ -115,7 +164,47 @@ def IoU(proposals, bboxes):
   # bottom-right corner of proposal and bbox. Think about their relationships. #
   ##############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  B, A, H_, W_, _ = proposals.shape
+  B, N, _ = bboxes.shape
+
+  device = proposals.device
+  dtype = proposals.dtype
+
+  bboxes = bboxes.to(device)
+
+  px_tl = proposals[:, :, :, :, 0].reshape(B, -1, 1)
+  py_tl = proposals[:, :, :, :, 1].reshape(B, -1, 1)
+  px_br = proposals[:, :, :, :, 2].reshape(B, -1, 1)
+  py_br = proposals[:, :, :, :, 3].reshape(B, -1, 1)
+  # px_c = (px_tl + px_br) / 2
+  # py_c = (py_tl + py_br) / 2
+  pw_a = px_br - px_tl
+  ph_a = py_br - py_tl
+  area_p = (pw_a * ph_a)  # (B, A*H_*W_, 1)
+
+  bx_tl = bboxes[:, :, 0].reshape(B, 1, N)  # (B, 1, N)
+  by_tl = bboxes[:, :, 1].reshape(B, 1, N)
+  bx_br = bboxes[:, :, 2].reshape(B, 1, N)
+  by_br = bboxes[:, :, 3].reshape(B, 1, N)
+  # bx_c = (bx_tl + bx_br) / 2
+  # by_c = (by_tl + by_br) / 2
+  bw_a = bx_br - bx_tl
+  bh_a = by_br - by_tl
+  area_b = (bw_a * bh_a)  # (B, 1, N)
+
+  area_u = area_p + area_b  # (B, A*H_*W_, N)
+
+  x_val = torch.minimum(px_br, bx_br) - torch.maximum(px_tl, bx_tl)
+  x_val_zero = torch.zeros(x_val.shape, device=device, dtype=dtype)
+  y_val = torch.minimum(py_br, by_br) - torch.maximum(py_tl, by_tl)
+  y_val_zero = torch.zeros(y_val.shape, device=device, dtype=dtype)
+
+  area_i = torch.maximum(x_val, x_val_zero) * torch.maximum(y_val, y_val_zero)
+
+  area_u -= area_i
+  iou_mat = area_i / area_u
+
   ##############################################################################
   #                               END OF YOUR CODE                             #
   ##############################################################################
@@ -140,9 +229,15 @@ class PredictionNetwork(nn.Module):
     # A=self.num_anchors and C=self.num_classes.                                 #
     ##############################################################################
     # Make sure to name your prediction network pred_layer.
-    self.pred_layer = None
+
     # Replace "pass" statement with your code
-    pass
+    self.pred_layer = nn.Sequential(
+      nn.Conv2d(in_dim, hidden_dim, (1, 1), stride=1),
+      nn.Dropout2d(p=drop_ratio),
+      nn.LeakyReLU(),
+      nn.Conv2d(hidden_dim, self.num_anchors * 5 + self.num_classes, (1, 1), stride=1)
+    )
+
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -239,7 +334,26 @@ class PredictionNetwork(nn.Module):
     # negative anchors specified by pos_anchor_idx and neg_anchor_idx.         #
     ############################################################################
     # Replace "pass" statement with your code
-    pass
+
+    B, _, H, W = features.shape
+
+    out = self.pred_layer(features)
+    anchor_data = out[:, :5*self.num_anchors, :, :].reshape(B, self.num_anchors, -1, H, W) # (B, A, 5, H, W)
+    class_scores = out[:, -self.num_classes:, :, :] # (B, C, H, W)
+    offsets = anchor_data[:, :, 1:, :, :].clone() # (B, A, 4, H, W)
+    offsets[:, :, :2, :, :] = torch.sigmoid(offsets[:, :, :2, :, :]) - 0.5
+    conf_scores = torch.sigmoid(anchor_data[:, :, :1, :, :].clone()) # (B, A, 1, H, W)
+
+    if pos_anchor_idx == None or neg_anchor_idx == None:
+      conf_scores = conf_scores.reshape(B, self.num_anchors, H, W)
+    else:
+      offsets = self._extract_anchor_data(offsets, pos_anchor_idx)
+      class_scores = self._extract_class_scores(class_scores, pos_anchor_idx)
+
+      pos = self._extract_anchor_data(conf_scores, pos_anchor_idx) # (M, 1)
+      neg = self._extract_anchor_data(conf_scores, neg_anchor_idx) # (M, 1)
+      conf_scores = torch.cat([pos, neg]) # (2*M, 1)
+
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -288,7 +402,33 @@ class SingleStageDetector(nn.Module):
     #       (A5-1) for a better performance than with the default value.         #
     ##############################################################################
     # Replace "pass" statement with your code
-    pass
+
+    device = images.device
+
+    # feature extraction
+    features = self.feat_extractor(images)
+
+    # grid and anchor generation
+    grid_list = GenerateGrid(batch_size=images.shape[0])
+    anc_list = GenerateAnchor(self.anchor_list, grid_list)
+
+    anc_list = anc_list.to(device)
+
+    # compute IoU and determine requirements
+    iou_mat = IoU(anc_list, bboxes)
+    pos_anchor_idx, neg_anchor_idx, GT_conf_scores, GT_offsets, GT_class, _, _ = ReferenceOnActivatedAnchors(anc_list, \
+        bboxes, grid_list, iou_mat, neg_thresh=0.2, method='YOLO')
+
+    conf_scores, offsets, class_prob = self.pred_network(features, pos_anchor_idx, neg_anchor_idx)
+
+    anc_per_img = torch.prod(torch.tensor(anc_list.shape[1:-1]))
+
+    conf_loss = ConfScoreRegression(conf_scores, GT_conf_scores)
+    reg_loss = BboxRegression(offsets, GT_offsets)
+    cls_loss = ObjectClassification(class_prob, GT_class, images.shape[0], anc_per_img, pos_anchor_idx)
+
+    total_loss = w_conf * conf_loss + w_reg * reg_loss + w_cls * cls_loss
+
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -324,7 +464,16 @@ class SingleStageDetector(nn.Module):
     # lists of B 2-D tensors (you may need to unsqueeze dim=1 for the last two). #
     ##############################################################################
     # Replace "pass" statement with your code
-    pass
+
+    # device = images.device
+
+    # features = self.feat_extractor(images)
+
+    # conf_scores, offsets, class_prob = self.pred_network(features)
+    # conf_scores = conf_scores[conf_scores > thresh]
+
+
+    # final_conf_scores = torchvision.ops.nms(offsets, conf_scores, iou_threshold=nms_thresh)
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -364,7 +513,53 @@ def nms(boxes, scores, iou_threshold=0.5, topk=None):
   #   github.com/pytorch/vision/blob/master/torchvision/csrc/cpu/nms_cpu.cpp  #
   #############################################################################
   # Replace "pass" statement with your code
-  pass
+
+  boxes = boxes.to('cpu')
+  scores = scores.to('cpu')
+
+  val, idx = scores.sort(descending=True)
+  idx_change = idx.clone()
+
+  def small_IoU(box_i, box_j):
+
+    device = box_i.device
+    dtype = box_i.dtype
+
+    pw_a = box_i[2] - box_i[0]
+    ph_a = box_i[3] - box_i[1]
+    area_p = (pw_a * ph_a)
+
+    bw_a = box_j[2] - box_j[0]
+    bh_a = box_j[3] - box_j[1]
+    area_b = (bw_a * bh_a)
+
+    area_u = area_p + area_b
+
+    x_val = torch.minimum(box_i[2], box_j[2]) - torch.maximum(box_i[0], box_j[0])
+    x_val_zero = torch.zeros(x_val.shape, device=device, dtype=dtype)
+    y_val = torch.minimum(box_i[3], box_j[3]) - torch.maximum(box_i[1], box_j[1])
+    y_val_zero = torch.zeros(y_val.shape, device=device, dtype=dtype)
+
+    area_i = torch.maximum(x_val, x_val_zero) * torch.maximum(y_val, y_val_zero)
+    area_u -= area_i
+
+    return area_i / area_u
+
+  for i, ix in enumerate(idx):
+    if idx_change[i] == -1:
+      continue
+    for j, jx in enumerate(idx):
+      if (j == i) or (idx_change[j] == -1):
+        continue
+      score = small_IoU(boxes[ix], boxes[jx])
+      if score > iou_threshold:
+        idx_change[j] = -1
+
+  keep = idx[idx_change >= 0]
+
+  if topk != None:
+    keep = keep[:topk]
+
   #############################################################################
   #                              END OF YOUR CODE                             #
   #############################################################################
